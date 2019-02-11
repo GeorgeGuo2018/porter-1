@@ -18,7 +18,6 @@ func (r *ReconcileService) useFinalizerIfNeeded(serv *corev1.Service) (bool, err
 				return false, err
 			}
 			log.Info("Append Finalizer to service", "ServiceName", serv.Name, "Namespace", serv.Namespace)
-			return true, nil
 		}
 	} else {
 		// The object is being deleted
@@ -33,9 +32,10 @@ func (r *ReconcileService) useFinalizerIfNeeded(serv *corev1.Service) (bool, err
 			// remove our finalizer from the list and update it.
 			serv.ObjectMeta.Finalizers = util.RemoveString(serv.ObjectMeta.Finalizers, constant.FinalizerName)
 			if err := r.Update(context.Background(), serv); err != nil {
-				return true, nil
+				return false, err
 			}
 			log.Info("Remove Finalizer before service deleted", "ServiceName", serv.Name, "Namespace", serv.Namespace)
+			return true, nil
 		}
 	}
 	return false, nil

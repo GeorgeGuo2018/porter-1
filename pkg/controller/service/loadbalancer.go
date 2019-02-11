@@ -90,7 +90,7 @@ func (r *ReconcileService) deleteLB(serv *corev1.Service) error {
 	}
 	nodeIPs, err := r.getServiceNodesIP(serv)
 	if err != nil {
-		log.Error(nil, "error in get nodes ip")
+		log.Error(nil, "error in get nodes ip when try to deleting bgp routes")
 		return err
 	}
 

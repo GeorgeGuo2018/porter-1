@@ -6,9 +6,10 @@ import (
 
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/any"
-	bgp "github.com/kubesphere/porter/pkg/bgp/serverd"
-	"github.com/magicsong/porter/pkg/bgp/apiutil"
+	"github.com/kubesphere/porter/pkg/bgp/apiutil"
+	bgpserver "github.com/kubesphere/porter/pkg/bgp/serverd"
 	api "github.com/osrg/gobgp/api"
+	bgp "github.com/osrg/gobgp/pkg/packet/bgp"
 	"github.com/vishvananda/netlink"
 )
 
@@ -53,7 +54,7 @@ func IsRouteAdded(ip string, prefix uint32) bool {
 	fn := func(d *api.Destination) {
 		result = true
 	}
-	err := bgp.GetServer().ListPath(context.Background(), listPathRequest, fn)
+	err := bgpserver.GetServer().ListPath(context.Background(), listPathRequest, fn)
 	if err != nil {
 		panic(err)
 	}
@@ -76,7 +77,7 @@ func ReconcileRoutes(ip string, nexthops []string) (toAdd []string, toDelete []s
 	}
 	fn := func(d *api.Destination) {
 		for _, path := range d.Paths {
-			attrInterfaces, _ := apiutil.UnmarshalPathAttributes()
+			attrInterfaces, _ := apiutil.UnmarshalPathAttributes(path.Pattrs)
 			nexthop := getNextHopFromPathAttributes(attrInterfaces)
 			origins[nexthop.String()] = true
 		}
@@ -94,11 +95,11 @@ func ReconcileRoutes(ip string, nexthops []string) (toAdd []string, toDelete []s
 		}
 	}
 
-	err = bgp.GetServer().ListPath(context.Background(), listPathRequest, fn)
+	err = bgpserver.GetServer().ListPath(context.Background(), listPathRequest, fn)
 	return
 }
 func AddMultiRoutes(ip string, prefix uint32, nexthops []string) error {
-	s := bgp.GetServer()
+	s := bgpserver.GetServer()
 	for _, nexthop := range nexthops {
 		apipath := toAPIPath(ip, prefix, nexthop)
 		_, err := s.AddPath(context.Background(), &api.AddPathRequest{
@@ -112,7 +113,7 @@ func AddMultiRoutes(ip string, prefix uint32, nexthops []string) error {
 }
 
 func DeleteMultiRoutes(ip string, prefix uint32, nexthops []string) error {
-	s := bgp.GetServer()
+	s := bgpserver.GetServer()
 	for _, nexthop := range nexthops {
 		apipath := toAPIPath(ip, prefix, nexthop)
 		err := s.DeletePath(context.Background(), &api.DeletePathRequest{

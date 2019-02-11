@@ -48,9 +48,9 @@ binary:
 	go build -o bin/manager ./cmd/manager/main.go
 
 debug:
-	./hack/debug_in_cluster.sh
+	./hack/manager/debug_in_cluster.sh
 debug-out-of-cluster:
-	./hack/debug_out_cluster.sh
+	./hack/manager/debug_out_cluster.sh
 
 debug-log:
 	kubectl logs -f -n porter-system controller-manager-0 -c manager

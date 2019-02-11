@@ -34,16 +34,20 @@ func (defaultStrategy) Select(serv *corev1.Service, eips *v1alpha1.EIPList) (*v1
 		return nil, fmt.Errorf("Not enough ips to select")
 	}
 	for _, ip := range eips.Items {
-		if ip.Status.Enable {
+		if !ip.Spec.Disable {
 			if len(ip.Status.PortsUsage) == 0 {
 				return &ip, nil
 			}
 			chosen := false
+			ports := make([]int32, 0, len(ip.Status.PortsUsage))
+			for key := range ip.Status.PortsUsage {
+				ports = append(ports, key)
+			}
 			for _, port := range serv.Spec.Ports {
-				index := sort.Search(len(ip.Status.PortsUsage), func(i int) bool {
-					return ip.Status.PortsUsage[i] >= port.Port
+				index := sort.Search(len(ports), func(i int) bool {
+					return ports[i] >= port.Port
 				})
-				if ip.Status.PortsUsage[index] == port.Port {
+				if ports[index] == port.Port {
 					chosen = false
 					break
 				}

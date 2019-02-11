@@ -26,6 +26,7 @@ import (
 // EIPSpec defines the desired state of EIP
 type EIPSpec struct {
 	Address string `json:"address,omitempty"`
+	Disable bool   `json:"disable,omitempty"`
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 }
@@ -34,8 +35,7 @@ type EIPSpec struct {
 type EIPStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-	Enable     bool    `json:"enable,omitempty"`
-	PortsUsage []int32 `json:"portsUsage,omitempty"`
+	PortsUsage map[int32]string `json:"portsUsage,omitempty"`
 }
 
 // +genclient

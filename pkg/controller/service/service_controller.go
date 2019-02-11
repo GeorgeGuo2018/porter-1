@@ -20,7 +20,6 @@ import (
 	"context"
 	"reflect"
 
-	"github.com/kubesphere/porter/pkg/util"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -36,10 +35,6 @@ import (
 * business logic.  Delete these comments after modifying this file.*
  */
 var log = logf.Log.WithName("lb-controller")
-
-const (
-	FinalizerName string = "finalizer.lb.kubesphere.io/v1apha1"
-)
 
 // Add creates a new Service Controller and adds it to the Manager with default RBAC. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
@@ -100,57 +95,25 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 	if len(instance.Status.LoadBalancer.Ingress) == 0 {
 		err := r.createLB(instance)
 		if err != nil {
-			log.Error(err, "Create LB for service failed", "Service Name", instance.GetName())
+			log.Error(err, "Create LB for service failed", "Service Name", instance.GetName(), "Namespace", instance.GetNamespace())
 			return reconcile.Result{}, err
 		}
-		instance.Status.LoadBalancer.Ingress = append(instance.Status.LoadBalancer.Ingress, corev1.LoadBalancerIngress{
-			IP: instance.Spec.ExternalIPs[0],
-		})
 	} else {
 		if !r.checkLB(instance) {
 			log.Info("Detect ingress IP, however no route exsit in gbp, maybe due to the restart of controller")
 			err = r.createLB(instance)
 			if err != nil {
-				log.Error(err, "Create LB for service failed", "Service Name", instance.GetName())
+				log.Error(err, "Create LB for service failed", "Service Name", instance.GetName(), "Namespace", instance.GetNamespace())
 				return reconcile.Result{}, err
 			}
 		}
 	}
-	if !reflect.DeepEqual(instance.Status, origin.Status) {
-		r.Client.Status().Update(context.Background(), instance)
+	if !reflect.DeepEqual(instance, origin) {
+		err := r.Update(context.Background(), instance)
+		if err != nil {
+			log.Error(nil, "update service instance failed", "Service Name", instance.GetName(), "Namespace", instance.GetNamespace())
+		}
 	}
+
 	return reconcile.Result{}, nil
-}
-
-func (r *ReconcileService) useFinalizerIfNeeded(serv *corev1.Service) (bool, error) {
-	if serv.ObjectMeta.DeletionTimestamp.IsZero() {
-		// The object is not being deleted, so if it does not have our finalizer,
-		// then lets add the finalizer and update the object.
-		if !util.ContainsString(serv.ObjectMeta.Finalizers, FinalizerName) {
-			serv.ObjectMeta.Finalizers = append(serv.ObjectMeta.Finalizers, FinalizerName)
-			if err := r.Update(context.Background(), serv); err != nil {
-				return false, err
-			}
-			log.Info("Append Finalizer to service", "ServiceName", serv.Name, "Namespace", serv.Namespace)
-			return true, nil
-		}
-	} else {
-		// The object is being deleted
-		if util.ContainsString(serv.ObjectMeta.Finalizers, FinalizerName) {
-			// our finalizer is present, so lets handle our external dependency
-			if err := r.deleteLB(serv); err != nil {
-				// if fail to delete the external dependency here, return with error
-				// so that it can be retried
-				return false, err
-			}
-
-			// remove our finalizer from the list and update it.
-			serv.ObjectMeta.Finalizers = util.RemoveString(serv.ObjectMeta.Finalizers, FinalizerName)
-			if err := r.Update(context.Background(), serv); err != nil {
-				return true, nil
-			}
-			log.Info("Remove Finalizer before service deleted", "ServiceName", serv.Name, "Namespace", serv.Namespace)
-		}
-	}
-	return false, nil
 }

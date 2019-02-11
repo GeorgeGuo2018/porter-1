@@ -7,7 +7,9 @@ import (
 	"github.com/kubesphere/porter/pkg/apis/network/v1alpha1"
 	"github.com/kubesphere/porter/pkg/bgp/routes"
 	"github.com/kubesphere/porter/pkg/strategy"
+	"github.com/kubesphere/porter/pkg/util"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -36,10 +38,18 @@ func (r *ReconcileService) createLB(serv *corev1.Service) error {
 	}
 	nexthops, err := r.getServiceNodesIP(serv)
 	if err != nil {
+		if errors.IsNotFound(err) {
+			log.Info("Detect no available endpoints now", "ServiceName", serv.GetName(), "Namespace", serv.GetNamespace())
+			return nil
+		}
 		log.Error(nil, "Failed to get ip of nodes where endpoints locate in")
 		return err
 	}
-	if err := routes.AddRoute(ip, nexthops); err != nil {
+	if nexthops == nil {
+		log.Info("No endpoints is ready now")
+		return nil
+	}
+	if err := routes.AddRoute(ip, 32, nexthops); err != nil {
 		return err
 	}
 	log.Info("Routed added successful", "ServiceName", serv.Name, "Namespace", serv.Namespace)
@@ -47,6 +57,27 @@ func (r *ReconcileService) createLB(serv *corev1.Service) error {
 	if err != nil {
 		log.Error(nil, "failed to mark ports of ip used")
 		return err
+	}
+	exsit := false
+	for _, item := range serv.Status.LoadBalancer.Ingress {
+		if item.IP == ip {
+			exsit = true
+			break
+		}
+	}
+	if !exsit {
+		serv.Status.LoadBalancer.Ingress = append(serv.Status.LoadBalancer.Ingress, corev1.LoadBalancerIngress{
+			IP: ip,
+		})
+		err = r.Status().Update(context.Background(), serv)
+		if err != nil {
+			log.Error(nil, "failed to update LoadBalancer of service", "ServiceName", serv.Name, "Namespace", serv.Namespace)
+			return err
+		}
+	}
+
+	if !util.ContainsString(serv.Spec.ExternalIPs, ip) {
+		serv.Spec.ExternalIPs = append(serv.Spec.ExternalIPs, ip)
 	}
 	log.Info(fmt.Sprintf("Pls visit %s:%d to check it out", ip, serv.Spec.Ports[0].Port))
 	return nil
@@ -85,6 +116,9 @@ func (r *ReconcileService) getServiceNodesIP(serv *corev1.Service) ([]string, er
 	err := r.Get(context.TODO(), types.NamespacedName{Namespace: serv.GetNamespace(), Name: serv.GetName()}, endpoints)
 	if err != nil {
 		return nil, err
+	}
+	if len(endpoints.Subsets) == 0 {
+		return nil, nil
 	}
 	nodes := make(map[string]bool)
 	for _, addr := range endpoints.Subsets[0].Addresses {

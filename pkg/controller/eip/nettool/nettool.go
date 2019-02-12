@@ -8,41 +8,73 @@ import (
 )
 
 var link netlink.Link
+var AgentTable int
 
+// EIPRoute is a specified ip route which our agent use on start. Equivalent to: "ip route replace local 0/0 dev lo table"
 type EIPRoute struct {
-	NextIP net.IP
-	EIP    net.IPNet
 }
 
 func init() {
 	link, _ = netlink.LinkByName("eth0")
+	AgentTable = 101
 }
 
-func NewEIPRoute(eip, nextip string, mask int) *EIPRoute {
-	EIP := net.IPNet{
+// EIPRule is a specified ip rule which our agent will use. Equivalent to: "ip rule from all to eip/32 lookup 101"
+type EIPRule struct {
+	EIP *net.IPNet
+}
+
+func NewEIPRule(eip string, mask int) *EIPRule {
+	EIP := &net.IPNet{
 		IP:   net.ParseIP(eip),
 		Mask: net.CIDRMask(mask, 32),
 	}
-	n := net.ParseIP(nextip)
-	return &EIPRoute{
-		NextIP: n,
-		EIP:    EIP,
+	return &EIPRule{
+		EIP: EIP,
 	}
 }
-func addLocalRule(ip *net.IPNet, mask int) error {
+func (e *EIPRule) ToAgentRule() *netlink.Rule {
 	rule := netlink.NewRule()
-	rule.Table = 101
-	rule.Dst = ip
-	rule.Mask = mask
-	return netlink.RuleAdd(rule)
+	src := &net.IPNet{
+		IP:   net.IPv4(0, 0, 0, 0),
+		Mask: net.IPv4Mask(0, 0, 0, 0),
+	}
+	rule.Src = src
+	rule.Table = AgentTable
+	rule.Dst = e.EIP
+	return rule
+}
+func (e *EIPRule) Add() error {
+	return netlink.RuleAdd(e.ToAgentRule())
 }
 
+func (e *EIPRule) Delete() error {
+	return netlink.RuleDel(e.ToAgentRule())
+}
+
+func (e *EIPRule) IsExist() (bool, error) {
+	rules, err := netlink.RuleList(netlink.FAMILY_V4)
+	if err != nil {
+		return false, err
+	}
+
+	for _, item := range rules {
+		if item.Dst != nil && item.Dst.String() == e.EIP.String() {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+//Equivalent to: "ip route replace local 0/0 dev lo table"
 func (e *EIPRoute) ToNetlinkRoute() *netlink.Route {
+	lo, _ := netlink.LinkByName("lo")
 	return &netlink.Route{
-		LinkIndex: link.Attrs().Index,
-		Src:       e.NextIP,
-		Type:      unix.RTN_NAT,
-		Dst:       &e.EIP,
+		LinkIndex: lo.Attrs().Index,
+		Type:      unix.RTN_LOCAL,
+		Src:       net.IPv4(172, 0, 0, 1),
+		Dst:       nil,
+		Table:     AgentTable,
 	}
 }
 func (e *EIPRoute) Add() error {

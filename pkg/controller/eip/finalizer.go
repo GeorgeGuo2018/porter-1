@@ -24,16 +24,17 @@ func (r *ReconcileEIP) useFinalizerIfNeeded(eip *networkv1alpha1.EIP) (bool, err
 		// The object is being deleted
 		if util.ContainsString(eip.ObjectMeta.Finalizers, constant.FinalizerName) {
 			// our finalizer is present, so lets handle our external dependency
-			if err := r.DelRoute(eip); err != nil {
-				log.Error(nil, "Failed to delete route", eip.GetName(), "namespace", eip.GetNamespace())
+			if err := r.DelRule(eip); err != nil {
+				log.Error(nil, "Failed to delete route", "name", eip.GetName(), "namespace", eip.GetNamespace())
 				return true, err
 			}
 			// remove our finalizer from the list and update it.
 			eip.ObjectMeta.Finalizers = util.RemoveString(eip.ObjectMeta.Finalizers, constant.FinalizerName)
 			if err := r.Update(context.Background(), eip); err != nil {
-				return true, nil
+				return true, err
 			}
 			log.Info("Remove Finalizer before eip deleted", "eipName", eip.Name, "Namespace", eip.Namespace)
+			return true, nil
 		}
 	}
 	return false, nil

@@ -44,6 +44,7 @@ spec:
       hostNetwork: true
       nodeSelector:
         dedicated: master
+      serviceAccountName: porter-service-account
       containers:
       - command:
         - /manager

@@ -1,72 +1,49 @@
 package eip
 
 import (
-	"context"
-	"strings"
-
-	"github.com/kubesphere/porter/pkg/controller/eip/nettool"
+	"fmt"
+	"os"
 
 	networkv1alpha1 "github.com/kubesphere/porter/pkg/apis/network/v1alpha1"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/types"
+	"github.com/kubesphere/porter/pkg/controller/eip/nettool"
 )
 
-func (r *ReconcileEIP) AddRoute(instance *networkv1alpha1.EIP) error {
-	checkedService := make(map[string]bool)
-	if len(instance.Status.PortsUsage) != 0 {
-		for _, value := range instance.Status.PortsUsage {
-			if _, ok := checkedService[value]; !ok {
-				checkedService[value] = true
-			} else {
-				continue
-			}
-			splits := strings.Split(value, "/")
-			service := &corev1.Service{}
-			err := r.Get(context.TODO(), types.NamespacedName{Namespace: splits[0], Name: splits[1]}, service)
-			if err != nil {
-				return err
-			}
-			clusterIP := service.Spec.ClusterIP
-			route := nettool.NewEIPRoute(instance.Spec.Address, clusterIP, 32)
-			yes, err := route.IsExist()
-			if err != nil {
-				return err
-			}
+func (r *ReconcileEIP) AddRule(instance *networkv1alpha1.EIP) error {
+	if instance.Spec.Address != "" {
+		rule := nettool.NewEIPRule(instance.Spec.Address, 32)
+		nodename := os.Getenv("MY_NODE_NAME")
+		if yes, err := rule.IsExist(); err != nil {
+			return err
+		} else {
 			if !yes {
-				if err := route.Add(); err != nil {
+				err = rule.Add()
+				if err != nil {
 					return err
 				}
+				r.recorder.Event(instance, "Normal", "Rule Created", fmt.Sprintf("Created ip rule for EIP %s in agent %s", instance.Spec.Address, nodename))
+			} else {
+				log.Info("Detect rule in node")
+				r.recorder.Event(instance, "Normal", "Detect rule in node", fmt.Sprintf("Skipped Creating ip rule for EIP %s in agent %s", instance.Spec.Address, nodename))
 			}
 		}
 	}
 	return nil
 }
 
-func (r *ReconcileEIP) DelRoute(instance *networkv1alpha1.EIP) error {
-	checkedService := make(map[string]bool)
-	if len(instance.Status.PortsUsage) != 0 {
-		for _, value := range instance.Status.PortsUsage {
-			if _, ok := checkedService[value]; !ok {
-				checkedService[value] = true
-			} else {
-				continue
-			}
-			splits := strings.Split(value, "/")
-			service := &corev1.Service{}
-			err := r.Get(context.TODO(), types.NamespacedName{Namespace: splits[0], Name: splits[1]}, service)
-			if err != nil {
-				return err
-			}
-			clusterIP := service.Spec.ClusterIP
-			route := nettool.NewEIPRoute(instance.Spec.Address, clusterIP, 32)
-			yes, err := route.IsExist()
-			if err != nil {
-				return err
-			}
+func (r *ReconcileEIP) DelRule(instance *networkv1alpha1.EIP) error {
+	if instance.Spec.Address != "" {
+		rule := nettool.NewEIPRule(instance.Spec.Address, 32)
+		if yes, err := rule.IsExist(); err != nil {
+			return err
+		} else {
 			if yes {
-				if err := route.Delete(); err != nil {
+				err = rule.Delete()
+				if err != nil {
 					return err
 				}
+				log.Info("Rule is deleted successfully")
+			} else {
+				log.Info("Try to delete a non-exist rule")
 			}
 		}
 	}

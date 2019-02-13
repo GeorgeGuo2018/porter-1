@@ -4,16 +4,16 @@ set -e
 IMG=$1
 binary=$2
 
-echo "Building binary"
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o bin/$binary cmd/${binary}/main.go
+echo "[1] Building binary for $binary"
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-w" -a -o  bin/${binary}/$binary cmd/${binary}/main.go
 
-echo "Binary build done, Build docker image $IMG of $binary"
-docker build -f deploy/${binary}/Dockerfile -t ${IMG} bin/
+echo "[2] Binary build done, Build docker image $IMG of $binary"
+docker build -f deploy/${binary}/Dockerfile -t ${IMG} bin/$binary/
 
-echo "Docker image build done, try to push to registry"
+echo "[3] Docker image build done, try to push to registry"
 docker push $IMG
 
-echo "updating kustomize image patch file for $binary resource"
+echo "[4] updating kustomize image patch file for $binary resource"
 sed -i'' -e 's@image: .*@image: '"${IMG}"'@' ./config/default/${binary}_image_patch.yaml
 
 if [ "$3" == "--private" ]; then
@@ -25,6 +25,4 @@ if [ "$3" == "--private" ]; then
     exit 0   
 fi
 
-echo "Building yamls"
-kustomize build config/default -o deploy/release.yaml
 

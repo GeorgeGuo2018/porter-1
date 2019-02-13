@@ -2,6 +2,7 @@ package routes
 
 import (
 	"context"
+	"fmt"
 	"net"
 
 	"github.com/golang/protobuf/ptypes"
@@ -75,7 +76,9 @@ func ReconcileRoutes(ip string, nexthops []string) (toAdd []string, toDelete []s
 	for _, item := range nexthops {
 		news[item] = true
 	}
+	found := false
 	fn := func(d *api.Destination) {
+		found = true
 		for _, path := range d.Paths {
 			attrInterfaces, _ := apiutil.UnmarshalPathAttributes(path.Pattrs)
 			nexthop := getNextHopFromPathAttributes(attrInterfaces)
@@ -87,7 +90,6 @@ func ReconcileRoutes(ip string, nexthops []string) (toAdd []string, toDelete []s
 				toDelete = append(toDelete, key)
 			}
 		}
-
 		for key := range news {
 			if _, ok := origins[key]; !ok {
 				toAdd = append(toAdd, key)
@@ -96,6 +98,9 @@ func ReconcileRoutes(ip string, nexthops []string) (toAdd []string, toDelete []s
 	}
 
 	err = bgpserver.GetServer().ListPath(context.Background(), listPathRequest, fn)
+	if !found {
+		toAdd = nexthops
+	}
 	return
 }
 func AddMultiRoutes(ip string, prefix uint32, nexthops []string) error {
@@ -108,6 +113,7 @@ func AddMultiRoutes(ip string, prefix uint32, nexthops []string) error {
 		if err != nil {
 			return err
 		}
+		fmt.Println("Add Route to nexthop " + nexthop)
 	}
 	return nil
 }

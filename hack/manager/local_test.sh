@@ -2,5 +2,5 @@
 
 set -e
 
-go build -o bin/manager cmd/manager/main.go
-./bin/manager -f config/bgp/config.toml
+go build -ldflags "-w" -o bin/manager/manager cmd/manager/main.go
+./bin/manager/manager -f config/bgp/config.toml

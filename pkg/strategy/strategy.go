@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/kubesphere/porter/pkg/errors"
+
 	"github.com/kubesphere/porter/pkg/apis/network/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -31,7 +33,7 @@ type defaultStrategy struct{}
 
 func (defaultStrategy) Select(serv *corev1.Service, eips *v1alpha1.EIPList) (*v1alpha1.EIP, error) {
 	if len(eips.Items) == 0 {
-		return nil, fmt.Errorf("Not enough ips to select")
+		return nil, errors.NewResourceNotEnoughError("eip")
 	}
 	for _, ip := range eips.Items {
 		if !ip.Spec.Disable {

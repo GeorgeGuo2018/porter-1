@@ -3,9 +3,11 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/kubesphere/porter/pkg/apis/network/v1alpha1"
 	"github.com/kubesphere/porter/pkg/bgp/routes"
+	portererror "github.com/kubesphere/porter/pkg/errors"
 	"github.com/kubesphere/porter/pkg/strategy"
 	"github.com/kubesphere/porter/pkg/util"
 	corev1 "k8s.io/api/core/v1"
@@ -16,7 +18,12 @@ import (
 
 func (r *ReconcileService) getExternalIP(serv *corev1.Service) (string, error) {
 	if len(serv.Spec.ExternalIPs) > 0 {
-		return serv.Spec.ExternalIPs[0], nil
+		for _, ip := range serv.Spec.ExternalIPs {
+			if r.getEIPByString(ip) != nil {
+				return ip, nil
+			}
+		}
+		return "", portererror.NewEIPNotFoundError(strings.Join(serv.Spec.ExternalIPs, ";"))
 	}
 	eipList := &v1alpha1.EIPList{}
 	err := r.List(context.Background(), &client.ListOptions{}, eipList)
@@ -29,6 +36,20 @@ func (r *ReconcileService) getExternalIP(serv *corev1.Service) (string, error) {
 		return "", err
 	}
 	return ip.Spec.Address, nil
+}
+
+func (r *ReconcileService) getEIPByString(ip string) *v1alpha1.EIP {
+	eipList := &v1alpha1.EIPList{}
+	err := r.List(context.Background(), &client.ListOptions{}, eipList)
+	if err != nil {
+		return nil
+	}
+	for _, eip := range eipList.Items {
+		if eip.Spec.Address == ip {
+			return &eip
+		}
+	}
+	return nil
 }
 
 func (r *ReconcileService) createLB(serv *corev1.Service) error {

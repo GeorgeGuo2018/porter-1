@@ -73,7 +73,7 @@ func main() {
 
 	log.Info("Setting up ip route")
 	command := fmt.Sprintf("ip route replace local 0/0 dev lo table %d", nettool.AgentTable)
-	_, err = exec.Command("bash", "-c", command).Output()
+	_, err = exec.Command("sh", "-c", command).Output()
 	if err != nil {
 		log.Error(err, "Failed to execute command: "+command)
 		os.Exit(1)

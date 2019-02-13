@@ -19,10 +19,13 @@ package service
 import (
 	"context"
 	"reflect"
+	"time"
 
+	portererror "github.com/kubesphere/porter/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -44,7 +47,7 @@ func Add(mgr manager.Manager) error {
 
 // newReconciler returns a new reconcile.Reconciler
 func newReconciler(mgr manager.Manager) reconcile.Reconciler {
-	return &ReconcileService{Client: mgr.GetClient(), scheme: mgr.GetScheme()}
+	return &ReconcileService{Client: mgr.GetClient(), scheme: mgr.GetScheme(), EventRecorder: mgr.GetRecorder("manager")}
 }
 
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
@@ -64,19 +67,19 @@ var _ reconcile.Reconciler = &ReconcileService{}
 type ReconcileService struct {
 	client.Client
 	scheme *runtime.Scheme
+	record.EventRecorder
 }
 
 // Reconcile reads that state of the cluster for a Service object and makes changes based on the state read
 // and what is in the Service.Spec
-// TODO(user): Modify this Reconcile function to implement your Controller logic.  The scaffolding writes
-// a Deployment as an example
-// +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=core,resources=services/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=core,resources=endpoints,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
 func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	// Fetch the Service instance
 	log.Info("Begin to reconclie for service")
 	instance := &corev1.Service{}
-	origin := instance.DeepCopy()
 	err := r.Get(context.TODO(), request.NamespacedName, instance)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -85,6 +88,8 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 		// Error reading the object - requeue the request.
 		return reconcile.Result{}, err
 	}
+	origin := instance.DeepCopy()
+	reconcileLog := log.WithValues("Service Name", instance.GetName(), "Namespace", instance.GetNamespace())
 	needReconile, err := r.useFinalizerIfNeeded(instance)
 	if err != nil {
 		return reconcile.Result{Requeue: true}, err
@@ -92,28 +97,32 @@ func (r *ReconcileService) Reconcile(request reconcile.Request) (reconcile.Resul
 	if needReconile {
 		return reconcile.Result{}, nil
 	}
-	if len(instance.Status.LoadBalancer.Ingress) == 0 {
+	if len(instance.Status.LoadBalancer.Ingress) == 0 || !r.checkLB(instance) {
 		err := r.createLB(instance)
 		if err != nil {
-			log.Error(err, "Create LB for service failed", "Service Name", instance.GetName(), "Namespace", instance.GetNamespace())
-			return reconcile.Result{}, err
-		}
-	} else {
-		if !r.checkLB(instance) {
-			log.Info("Detect ingress IP, however no route exsit in gbp, maybe due to the restart of controller")
-			err = r.createLB(instance)
-			if err != nil {
-				log.Error(err, "Create LB for service failed", "Service Name", instance.GetName(), "Namespace", instance.GetNamespace())
-				return reconcile.Result{}, err
+			switch t := err.(type) {
+			case portererror.ResourceNotEnoughError:
+				reconcileLog.Info(t.Error() + ", waiting for requeue")
+				return reconcile.Result{
+					Requeue:      true,
+					RequeueAfter: 5 * time.Second,
+				}, nil
+			case portererror.EIPNotFoundError:
+				reconcileLog.Error(t, "Detect non-exist ips in field 'ExternalIPs'")
+				r.Event(instance, "Error", "Detect non-exist ips in field 'ExternalIPs", "Please clear field 'ExternalIPs' before using Porter")
+				return reconcile.Result{}, nil
+			default:
+				reconcileLog.Error(t, "Create LB for service failed")
+				return reconcile.Result{}, t
 			}
 		}
 	}
 	if !reflect.DeepEqual(instance, origin) {
 		err := r.Update(context.Background(), instance)
 		if err != nil {
-			log.Error(nil, "update service instance failed", "Service Name", instance.GetName(), "Namespace", instance.GetNamespace())
+			reconcileLog.Error(nil, "update service instance failed")
+			return reconcile.Result{}, err
 		}
 	}
-
 	return reconcile.Result{}, nil
 }

@@ -18,6 +18,7 @@ spec:
       containers:
         - name: porter-agent
           image: magicsong/porter-agent:latest
+          imagePullPolicy: Always
           resources:
             limits:
               cpu: 100m
@@ -35,7 +36,6 @@ spec:
               add:
               - "NET_ADMIN"
       hostNetwork: true
-      serviceAccountName: porter-service-account
 
 
     

@@ -2,8 +2,9 @@ package routes
 
 import (
 	"context"
-	"fmt"
 	"net"
+	"strconv"
+	"strings"
 
 	"github.com/golang/protobuf/ptypes"
 	"github.com/golang/protobuf/ptypes/any"
@@ -36,12 +37,18 @@ func toAPIPath(ip string, prefix uint32, nexthop string) *api.Path {
 	})
 	attrs := []*any.Any{a1, a2}
 	return &api.Path{
-		Family: &api.Family{Afi: api.Family_AFI_IP, Safi: api.Family_SAFI_UNICAST},
-		Nlri:   nlri,
-		Pattrs: attrs,
+		Family:     &api.Family{Afi: api.Family_AFI_IP, Safi: api.Family_SAFI_UNICAST},
+		Nlri:       nlri,
+		Pattrs:     attrs,
+		Identifier: GenerateIdentifier(nexthop),
 	}
 }
 
+func GenerateIdentifier(nexthop string) uint32 {
+	index := strings.LastIndex(nexthop, ".")
+	n, _ := strconv.ParseUint(nexthop[index+1:], 0, 32)
+	return uint32(n)
+}
 func IsRouteAdded(ip string, prefix uint32) bool {
 	lookup := &api.TableLookupPrefix{
 		Prefix: ip,
@@ -113,7 +120,6 @@ func AddMultiRoutes(ip string, prefix uint32, nexthops []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Println("Add Route to nexthop " + nexthop)
 	}
 	return nil
 }

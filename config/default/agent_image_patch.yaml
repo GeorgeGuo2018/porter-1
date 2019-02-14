@@ -8,5 +8,5 @@ spec:
     spec:
       containers:
       # Change the value of image field below to your controller image URL
-      - image: magicsong/porter-agent:e2d61f2
+      - image: magicsong/porter-agent:8ecea89
         name: porter-agent
